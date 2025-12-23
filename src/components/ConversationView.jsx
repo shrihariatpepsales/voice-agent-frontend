@@ -1,20 +1,8 @@
 import { Box, Typography, Avatar, Fade } from '@mui/material';
 import { Person, SmartToy } from '@mui/icons-material';
-import { useMemo } from 'react';
 
 export function ConversationView({ userMessages, agentMessages, liveUserLine, isThinking, isListening }) {
-  const conversation = useMemo(() => {
-    const withRoles = [
-      ...userMessages.map((m) => ({ ...m, role: 'user' })),
-      ...agentMessages.map((m) => ({ ...m, role: 'agent' })),
-    ];
-
-    return withRoles.sort((a, b) => {
-      const ta = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
-      const tb = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
-      return ta - tb;
-    });
-  }, [userMessages, agentMessages]);
+  const maxLength = Math.max(userMessages.length, agentMessages.length);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -41,134 +29,161 @@ export function ConversationView({ userMessages, agentMessages, liveUserLine, is
         </Box>
       )}
 
-      {/* Merged Conversation (chat-like UI) */}
-      {conversation.map((message) => {
-        const isUser = message.role === 'user';
-        const time =
-          message.timestamp instanceof Date
-            ? message.timestamp.toLocaleTimeString()
-            : new Date(message.timestamp).toLocaleTimeString();
+      {/* Conversation rendered in logical pairs: user message followed by agent reply */}
+      {Array.from({ length: maxLength }).map((_, index) => {
+        const userMessage = userMessages[index];
+        const agentMessage = agentMessages[index];
 
-        if (isUser) {
-          return (
-            <Fade in={true} key={message.id} timeout={300}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 2,
-                  animation: 'slideInRight 0.3s ease',
-                  '@keyframes slideInRight': {
-                    from: {
-                      opacity: 0,
-                      transform: 'translateX(20px)',
-                    },
-                    to: {
-                      opacity: 1,
-                      transform: 'translateX(0)',
-                    },
-                  },
-                }}
-              >
-                <Box
-                  sx={{
-                    maxWidth: '70%',
-                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                    borderRadius: 3,
-                    borderTopRightRadius: 4,
-                    p: 2,
-                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-                  }}
-                >
-                  <Typography variant="body1" sx={{ color: 'white', wordBreak: 'break-word' }}>
-                    {message.text}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      display: 'block',
-                      mt: 1,
-                      color: 'rgba(255, 255, 255, 0.7)',
-                      fontSize: '0.75rem',
-                    }}
-                  >
-                    {time}
-                  </Typography>
-                </Box>
-                <Avatar
-                  sx={{
-                    bgcolor: 'primary.main',
-                    width: 36,
-                    height: 36,
-                  }}
-                >
-                  <Person sx={{ fontSize: 20 }} />
-                </Avatar>
-              </Box>
-            </Fade>
-          );
-        }
+        const renderUser =
+          userMessage &&
+          userMessage.text &&
+          String(userMessage.text).trim().length > 0;
+
+        const renderAgent =
+          agentMessage &&
+          agentMessage.text &&
+          String(agentMessage.text).trim().length > 0;
+
+        const userTime =
+          userMessage && userMessage.timestamp
+            ? userMessage.timestamp instanceof Date
+              ? userMessage.timestamp.toLocaleTimeString()
+              : new Date(userMessage.timestamp).toLocaleTimeString()
+            : '';
+
+        const agentTime =
+          agentMessage && agentMessage.timestamp
+            ? agentMessage.timestamp instanceof Date
+              ? agentMessage.timestamp.toLocaleTimeString()
+              : new Date(agentMessage.timestamp).toLocaleTimeString()
+            : '';
 
         return (
-          <Fade in={true} key={message.id} timeout={300}>
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'flex-start',
-                gap: 2,
-                animation: 'slideInLeft 0.3s ease',
-                '@keyframes slideInLeft': {
-                  from: {
-                    opacity: 0,
-                    transform: 'translateX(-20px)',
-                  },
-                  to: {
-                    opacity: 1,
-                    transform: 'translateX(0)',
-                  },
-                },
-              }}
-            >
-              <Avatar
-                sx={{
-                  bgcolor: 'secondary.main',
-                  width: 36,
-                  height: 36,
-                }}
-              >
-                <SmartToy sx={{ fontSize: 20 }} />
-              </Avatar>
-              <Box
-                sx={{
-                  maxWidth: '70%',
-                  background: 'rgba(15, 23, 42, 0.8)',
-                  border: '1px solid rgba(148, 163, 184, 0.2)',
-                  borderRadius: 3,
-                  borderTopLeftRadius: 4,
-                  p: 2,
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
-                }}
-              >
-                <Typography
-                  variant="body1"
-                  sx={{ color: 'text.primary', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
-                >
-                  {message.text}
-                </Typography>
-                <Typography
-                  variant="caption"
+          <Box key={`pair-${index}`} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {renderUser && (
+              <Fade in={true} timeout={300}>
+                <Box
                   sx={{
-                    display: 'block',
-                    mt: 1,
-                    color: 'text.secondary',
-                    fontSize: '0.75rem',
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: 2,
+                    animation: 'slideInRight 0.3s ease',
+                    '@keyframes slideInRight': {
+                      from: {
+                        opacity: 0,
+                        transform: 'translateX(20px)',
+                      },
+                      to: {
+                        opacity: 1,
+                        transform: 'translateX(0)',
+                      },
+                    },
                   }}
                 >
-                  {time}
-                </Typography>
-              </Box>
-            </Box>
-          </Fade>
+                  <Box
+                    sx={{
+                      maxWidth: '70%',
+                      background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                      borderRadius: 3,
+                      borderTopRightRadius: 4,
+                      p: 2,
+                      boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                    }}
+                  >
+                    <Typography variant="body1" sx={{ color: 'white', wordBreak: 'break-word' }}>
+                      {userMessage.text}
+                    </Typography>
+                    {userTime && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: 'block',
+                          mt: 1,
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        {userTime}
+                      </Typography>
+                    )}
+                  </Box>
+                  <Avatar
+                    sx={{
+                      bgcolor: 'primary.main',
+                      width: 36,
+                      height: 36,
+                    }}
+                  >
+                    <Person sx={{ fontSize: 20 }} />
+                  </Avatar>
+                </Box>
+              </Fade>
+            )}
+
+            {renderAgent && (
+              <Fade in={true} timeout={300}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'flex-start',
+                    gap: 2,
+                    animation: 'slideInLeft 0.3s ease',
+                    '@keyframes slideInLeft': {
+                      from: {
+                        opacity: 0,
+                        transform: 'translateX(-20px)',
+                      },
+                      to: {
+                        opacity: 1,
+                        transform: 'translateX(0)',
+                      },
+                    },
+                  }}
+                >
+                  <Avatar
+                    sx={{
+                      bgcolor: 'secondary.main',
+                      width: 36,
+                      height: 36,
+                    }}
+                  >
+                    <SmartToy sx={{ fontSize: 20 }} />
+                  </Avatar>
+                  <Box
+                    sx={{
+                      maxWidth: '70%',
+                      background: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid rgba(148, 163, 184, 0.2)',
+                      borderRadius: 3,
+                      borderTopLeftRadius: 4,
+                      p: 2,
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+                    }}
+                  >
+                    <Typography
+                      variant="body1"
+                      sx={{ color: 'text.primary', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
+                    >
+                      {agentMessage.text}
+                    </Typography>
+                    {agentTime && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: 'block',
+                          mt: 1,
+                          color: 'text.secondary',
+                          fontSize: '0.75rem',
+                        }}
+                      >
+                        {agentTime}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              </Fade>
+            )}
+          </Box>
         );
       })}
 

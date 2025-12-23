@@ -17,12 +17,13 @@ export function ModeToggle({ mode, onChange, disabled }) {
         sx={{
           bgcolor: 'rgba(15, 23, 42, 0.6)',
           border: '1px solid rgba(148, 163, 184, 0.2)',
-          borderRadius: 2,
+          borderRadius: 20,
+          height: 40,
           '& .MuiToggleButton-root': {
             color: 'text.secondary',
             border: 'none',
-            px: 2,
-            py: 0.75,
+            px: 2.5,
+            height: 40,
             '&.Mui-selected': {
               bgcolor: 'primary.main',
               color: 'white',

@@ -1,4 +1,4 @@
-import { getBrowserSessionId } from '../session';
+import { getSessionMetadata } from '../session';
 
 let socket = null;
 let listeners = [];
@@ -14,12 +14,12 @@ function notifyAll(message) {
 }
 
 function withMetadata(message) {
-  const sessionId = getBrowserSessionId();
+  const meta = getSessionMetadata();
   return {
     ...message,
     metadata: {
       ...(message.metadata || {}),
-      browser_session_id: sessionId,
+      ...meta,
     },
   };
 }

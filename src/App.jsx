@@ -6,9 +6,10 @@ import {
   appendAgentToken,
   setLiveUserLine,
   loadChatHistory,
+  resetChatState,
 } from './store/chatSlice';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-import { Box, Container, Typography, Paper } from '@mui/material';
+import { Box, Container, Typography, Paper, Avatar, Button } from '@mui/material';
 import './styles.css';
 import { useMicrophone } from './audio/useMicrophone';
 import { playAudioChunk } from './audio/audioPlayer';
@@ -19,6 +20,8 @@ import { StatusIndicator } from './components/StatusIndicator';
 import { MicrophoneButton } from './components/MicrophoneButton';
 import { ModeToggle } from './components/ModeToggle';
 import { ChatInput } from './components/ChatInput';
+import { AuthGate } from './components/AuthGate';
+import { resetBrowserSessionId } from './session';
 
 const theme = createTheme({
   palette: {
@@ -63,6 +66,8 @@ const theme = createTheme({
 
 function App() {
   const [mode, setMode] = useState('voice'); // 'voice' | 'chat'
+  const [authState, setAuthState] = useState(null);
+  const [showAuthGate, setShowAuthGate] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [connectionState, setConnectionState] = useState('disconnected');
   const dispatch = useDispatch();
@@ -153,12 +158,18 @@ function App() {
       mode === 'voice' &&
       connectionState === 'idle' &&
       agentMessages.length > 0 &&
-      agentMessages[0].text &&
-      agentMessages[0].text.trim().length > 0 &&
-      agentMessages[0].text !== previousAgentTextRef.current &&
       !isSpeakingRef.current
     ) {
-      const textToSpeak = agentMessages[0].text.trim();
+      const latest = agentMessages[agentMessages.length - 1];
+      if (!latest || !latest.text || !latest.text.trim()) {
+        return;
+      }
+
+      const textToSpeak = latest.text.trim();
+      if (textToSpeak === previousAgentTextRef.current) {
+        return;
+      }
+
       previousAgentTextRef.current = textToSpeak;
       isSpeakingRef.current = true;
       setConnectionState('speaking');
@@ -223,6 +234,121 @@ function App() {
   const isThinking = connectionState === 'thinking';
   const isSpeaking = connectionState === 'speaking' || isSpeakingRef.current;
 
+  // Initialize auth state from localStorage on first load
+  useEffect(() => {
+    if (authState !== null) return;
+    if (typeof window === 'undefined') {
+      setAuthState({ type: 'guest', user: null });
+      setShowAuthGate(true);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem('voice_agent_auth');
+      const guestMode = window.localStorage.getItem('voice_agent_guest_mode') === 'true';
+      if (!raw) {
+        if (guestMode) {
+          // Previously selected guest mode: go straight to chat as guest
+          setAuthState({ type: 'guest', user: null });
+          setShowAuthGate(false);
+        } else {
+          // No stored auth: treat as guest but show the auth gate
+          setAuthState({ type: 'guest', user: null });
+          setShowAuthGate(true);
+        }
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.type === 'user' && parsed.user) {
+        setAuthState({ type: 'user', user: parsed.user });
+        // Stored user: skip auth gate and go straight to app
+        setShowAuthGate(false);
+      } else {
+        if (guestMode) {
+          setAuthState({ type: 'guest', user: null });
+          setShowAuthGate(false);
+        } else {
+          setAuthState({ type: 'guest', user: null });
+          setShowAuthGate(true);
+        }
+      }
+    } catch {
+      setAuthState({ type: 'guest', user: null });
+      setShowAuthGate(true);
+    }
+  }, [authState]);
+
+  const handleAuthenticated = (next) => {
+    const previousUserId = authState && authState.user ? authState.user.id : null;
+    const nextUser = next.user || null;
+    const nextUserId = nextUser ? nextUser.id : null;
+
+    const nextState = { type: next.type, user: nextUser };
+    setAuthState(nextState);
+    setShowAuthGate(false);
+
+    if (typeof window !== 'undefined') {
+      if (nextState.type === 'user' && nextState.user) {
+        window.localStorage.setItem(
+          'voice_agent_auth',
+          JSON.stringify({ type: 'user', user: nextState.user })
+        );
+        window.localStorage.removeItem('voice_agent_guest_mode');
+      } else {
+        window.localStorage.removeItem('voice_agent_auth');
+        // Persist explicit guest selection so refresh stays in guest mode
+        window.localStorage.setItem('voice_agent_guest_mode', 'true');
+      }
+    }
+
+    // If we just logged in, or switched to a different user, start a fresh conversation
+    if (nextState.type === 'user' && nextUserId && nextUserId !== previousUserId) {
+      resetBrowserSessionId();
+      dispatch(resetChatState());
+      dispatch(loadChatHistory());
+    }
+
+    // If we explicitly entered guest mode, start a fresh guest conversation
+    if (nextState.type === 'guest') {
+      resetBrowserSessionId();
+      dispatch(resetChatState());
+      dispatch(loadChatHistory());
+    }
+  };
+
+  const handleLogout = () => {
+    setAuthState({ type: 'guest', user: null });
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('voice_agent_auth');
+      window.localStorage.removeItem('voice_agent_guest_mode');
+    }
+    // New guest conversation: reset browser session id and clear chat
+    resetBrowserSessionId();
+    dispatch(resetChatState());
+    // After logout, show the auth gate again so user can choose guest or login
+    setShowAuthGate(true);
+  };
+
+  if (authState === null) {
+    // Still hydrating auth state
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+      </ThemeProvider>
+    );
+  }
+
+  if (showAuthGate) {
+    // Show auth gate (login/signup/guest choice)
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <AuthGate
+          onAuthenticated={handleAuthenticated}
+        />
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -272,6 +398,72 @@ function App() {
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {authState?.type === 'user' && authState.user && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    mr: 2,
+                    px: 1.5,
+                    height: 40,
+                    borderRadius: 20,
+                    border: '1px solid rgba(148, 163, 184, 0.3)',
+                    backgroundColor: 'rgba(15,23,42,0.8)',
+                  }}
+                >
+                  <Avatar
+                    sx={{
+                      bgcolor: 'secondary.main',
+                      width: 32,
+                      height: 32,
+                      fontSize: '0.9rem',
+                    }}
+                  >
+                    {(authState.user.name || authState.user.email || '?')
+                      .charAt(0)
+                      .toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                    <Typography variant="body2" sx={{ lineHeight: 1.2 }}>
+                      {authState.user.name || authState.user.email || 'User'}
+                    </Typography>
+                    {authState.user.name && authState.user.email && (
+                      <Typography variant="caption" color="text.secondary">
+                        {authState.user.email}
+                      </Typography>
+                    )}
+                  </Box>
+                  <Button
+                    size="small"
+                    variant="text"
+                    color="secondary"
+                    onClick={handleLogout}
+                    sx={{ textTransform: 'none', fontSize: '0.75rem', px: 1 }}
+                  >
+                    Logout
+                  </Button>
+                </Box>
+              )}
+              {authState?.type === 'guest' && (
+                <Button
+                  size="small"
+                  variant="text"
+                  color="secondary"
+                  onClick={() => {
+                    // Exit guest mode: clear guest flag and return to auth gate
+                    if (typeof window !== 'undefined') {
+                      window.localStorage.removeItem('voice_agent_guest_mode');
+                    }
+                    resetBrowserSessionId();
+                    dispatch(resetChatState());
+                    setShowAuthGate(true);
+                  }}
+                  sx={{ textTransform: 'none', fontSize: '0.8rem' }}
+                >
+                  Exit guest mode
+                </Button>
+              )}
               <ModeToggle
                 mode={mode}
                 onChange={handleModeChange}

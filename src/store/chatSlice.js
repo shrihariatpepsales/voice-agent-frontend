@@ -34,16 +34,18 @@ export const loadChatHistory = createAsyncThunk(
   }
 );
 
+const initialState = {
+  userMessages: [],
+  agentMessages: [],
+  liveUserLine: '',
+  status: 'idle',
+  error: null,
+  streamingNewAgent: false,
+};
+
 const chatSlice = createSlice({
   name: 'chat',
-  initialState: {
-    userMessages: [],
-    agentMessages: [],
-    liveUserLine: '',
-    status: 'idle',
-    error: null,
-    streamingNewAgent: false,
-  },
+  initialState,
   reducers: {
     addUserMessage(state, action) {
       state.userMessages.push(action.payload);
@@ -70,6 +72,9 @@ const chatSlice = createSlice({
     setLiveUserLine(state, action) {
       state.liveUserLine = action.payload || '';
     },
+    resetChatState() {
+      return initialState;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -95,6 +100,7 @@ export const {
   markNewAgentMessage,
   appendAgentToken,
   setLiveUserLine,
+  resetChatState,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;
