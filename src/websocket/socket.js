@@ -1,3 +1,5 @@
+import { getBrowserSessionId } from '../session';
+
 let socket = null;
 let listeners = [];
 
@@ -9,6 +11,17 @@ function notifyAll(message) {
       console.error('socket_listener_error', err);
     }
   });
+}
+
+function withMetadata(message) {
+  const sessionId = getBrowserSessionId();
+  return {
+    ...message,
+    metadata: {
+      ...(message.metadata || {}),
+      browser_session_id: sessionId,
+    },
+  };
 }
 
 export function connectWebSocket() {
@@ -49,51 +62,51 @@ export function sendAudioChunk(pcm16) {
   // Basic client-side logging for debugging
   // Note: keep this lightweight to avoid spamming the console.
   console.debug('sendAudioChunk', { bytes: pcm16.length });
-  const message = {
+  const message = withMetadata({
     type: 'audio_chunk',
     payload: {
       audio: base64,
     },
-  };
+  });
   socket.send(JSON.stringify(message));
 }
 
 export function sendInterrupt() {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  const message = {
+  const message = withMetadata({
     type: 'interrupt',
     payload: {},
-  };
+  });
   socket.send(JSON.stringify(message));
 }
 
 export function sendStartRecording() {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  const message = {
+  const message = withMetadata({
     type: 'start_recording',
     payload: {},
-  };
+  });
   socket.send(JSON.stringify(message));
 }
 
 export function sendStopRecording() {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  const message = {
+  const message = withMetadata({
     type: 'stop_recording',
     payload: {},
-  };
+  });
   socket.send(JSON.stringify(message));
 }
 
 export function sendChatMessage(text) {
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
   if (!text || !text.trim()) return;
-  const message = {
+  const message = withMetadata({
     type: 'chat_message',
     payload: {
       text: text.trim(),
     },
-  };
+  });
   socket.send(JSON.stringify(message));
 }
 

@@ -19,6 +19,8 @@ This frontend is a React + Vite application that provides a user interface for a
 
 - React 19 - UI framework
 - Vite - Build tool and dev server
+- Redux Toolkit + react-redux - Application state and chat history
+- Axios - HTTP client for backend APIs
 - Web Audio API - Microphone capture and audio playback
 - WebSocket API - Real-time communication with backend
 - OpenAI TTS API - Text-to-speech conversion
@@ -82,7 +84,7 @@ npm run preview
 frontend/
 ├── src/
 │   ├── App.jsx              # Main React component - UI state, WebSocket handling, TTS orchestration
-│   ├── main.jsx             # React app entry point
+│   ├── main.jsx             # React app entry point (wraps app in Redux Provider)
 │   ├── styles.css           # Main application styles
 │   ├── index.css            # Base styles
 │   ├── App.css              # Component-specific styles (if any)
@@ -90,8 +92,14 @@ frontend/
 │   │   ├── useMicrophone.js    # React hook for microphone capture and audio processing
 │   │   ├── audioPlayer.js       # Utility for playing backend-generated audio chunks
 │   │   └── openaiTTS.js         # OpenAI TTS API integration and audio playback
-│   └── websocket/
-│       └── socket.js        # WebSocket client - connection management and message handling
+│   ├── websocket/
+│   │   └── socket.js        # WebSocket client - connection management and message handling
+│   ├── api/
+│   │   └── client.js        # Axios instance + helpers (includes browser_session_id on every request)
+│   ├── store/
+│   │   ├── index.js         # Redux store configuration
+│   │   └── chatSlice.js     # Chat history slice + async thunks to load history
+│   └── session.js           # Browser-stable session identifier (per-tab, persisted in sessionStorage)
 ├── index.html               # HTML entry point
 ├── vite.config.js           # Vite configuration
 ├── package.json             # Dependencies and scripts
@@ -107,9 +115,22 @@ The frontend communicates with the backend using a JSON-based WebSocket protocol
 ```json
 {
   "type": "message_type",
-  "payload": {}
+  "payload": {},
+  "metadata": {}
 }
 ```
+
+The WebSocket client (`websocket/socket.js`) automatically attaches a **per-tab session identifier** to every outbound message:
+
+```json
+{
+  "metadata": {
+    "browser_session_id": "<stable-session-id-for-this-tab>"
+  }
+}
+```
+
+This ID is generated once per browser tab using `sessionStorage` (see `session.js`) and is used by the backend to group and restore chat history for that tab.
 
 ### Client to Server Messages
 
@@ -185,12 +206,10 @@ Main React component that orchestrates the entire application.
 **State Management:**
 - `isRecording`: Boolean - whether microphone is currently recording
 - `connectionState`: String - current WebSocket connection state
-- `userTranscript`: String - finalized transcript history (accumulated)
-- `agentText`: String - current agent response (streaming tokens accumulated)
-- `liveUserLine`: String - current interim transcript (real-time display)
-- `eventLog`: Array - WebSocket event log for debugging (last 50 events)
-- `previousAgentTextRef`: useRef - tracks last spoken agent text to prevent duplicate TTS
-- `isSpeakingRef`: useRef - tracks if TTS is currently playing
+- `mode`: `"voice"` or `"chat"` - current interaction mode
+- Conversation state (`userMessages`, `agentMessages`, `liveUserLine`) is sourced from the Redux `chat` slice via `useSelector`.
+- `previousAgentTextRef`: `useRef` - tracks last spoken agent text to prevent duplicate TTS
+- `isSpeakingRef`: `useRef` - tracks if TTS is currently playing
 
 **Key Functions:**
 - `toggleRecording()`: Handles start/stop recording button click
@@ -209,8 +228,8 @@ Main React component that orchestrates the entire application.
   - Stops TTS on interruption
 
 **Message Handlers:**
-- `transcript`: Updates `liveUserLine` (interim) or `userTranscript` (final)
-- `agent_text`: Accumulates streaming tokens or clears previous response
+- `transcript`: Dispatches `setLiveUserLine` for interim text, and `addUserMessage` + `clearAgentMessages` when a final transcript arrives
+- `agent_text`: Dispatches `clearAgentMessages` when `payload.clear` is true, and `appendAgentToken` for streaming tokens
 - `status`: Updates `connectionState`
 - `agent_audio`: Plays backend-generated audio chunks (placeholder)
 
@@ -378,26 +397,33 @@ The frontend uses OpenAI's TTS API to read out agent responses automatically.
 
 ## State Management
 
-The application uses React's built-in state management with hooks.
+The application uses a mix of **Redux Toolkit** for chat history and core conversation state, and React hooks for local UI concerns.
 
-**Component State:**
-- `useState` for UI state (recording, connection, transcripts, agent text)
-- `useRef` for mutable values that don't trigger re-renders (TTS tracking)
-- `useCallback` for memoized callbacks (audio frame handler)
-- `useEffect` for side effects (WebSocket, TTS triggering)
+**Global State (Redux Toolkit):**
+- Slice: `store/chatSlice.js`
+  - `userMessages`: Array of user message objects
+  - `agentMessages`: Array of agent message objects
+  - `liveUserLine`: Current interim transcript
+  - `status` / `error`: Async loading status for history
+- Thunks:
+  - `loadChatHistory`: Fetches past turns for the current browser tab via `/api/conversations/:sessionId` and initializes the UI on page load/refresh.
+- Actions:
+  - `addUserMessage` – append a new user message
+  - `clearAgentMessages` – clear current agent responses
+  - `appendAgentToken` – append streaming LLM tokens to the latest agent message
+  - `setLiveUserLine` – update the interim transcript
+
+The Redux store is configured in `store/index.js` and provided to the app via `Provider` in `main.jsx`.
+
+**Local State (React Hooks in `App.jsx`):**
+- `isRecording`, `connectionState`, `mode` (voice/chat), and refs for TTS tracking (`previousAgentTextRef`, `isSpeakingRef`).
+- `useEffect` hooks manage WebSocket connection, subscription to messages, auto-scrolling, and TTS triggering.
 
 **State Flow:**
-1. User interaction updates local state
-2. State changes trigger WebSocket messages
-3. WebSocket messages update state
-4. State changes trigger UI updates
-5. State changes trigger side effects (TTS)
-
-**State Synchronization:**
-- Connection state synchronized with backend via `status` messages
-- Recording state synchronized via `start_recording`/`stop_recording` messages
-- Transcript state synchronized via `transcript` messages
-- Agent text synchronized via `agent_text` messages
+1. On mount, `connectWebSocket()` is called and `loadChatHistory()` is dispatched.
+2. WebSocket messages (`transcript`, `agent_text`, `status`, `agent_audio`) dispatch Redux actions to update the conversation state.
+3. User actions (typing/sending messages, microphone toggle) dispatch Redux actions and send WebSocket messages.
+4. Redux state drives `ConversationView` to show both **restored history** and live conversation.
 
 ## UI Components
 

@@ -1,17 +1,20 @@
-import { Box, Typography, Avatar, Fade, Skeleton } from '@mui/material';
+import { Box, Typography, Avatar, Fade } from '@mui/material';
 import { Person, SmartToy } from '@mui/icons-material';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 
 export function ConversationView({ userMessages, agentMessages, liveUserLine, isThinking, isListening }) {
-  const [displayedAgentText, setDisplayedAgentText] = useState('');
+  const conversation = useMemo(() => {
+    const withRoles = [
+      ...userMessages.map((m) => ({ ...m, role: 'user' })),
+      ...agentMessages.map((m) => ({ ...m, role: 'agent' })),
+    ];
 
-  useEffect(() => {
-    if (agentMessages.length > 0 && agentMessages[0].text) {
-      setDisplayedAgentText(agentMessages[0].text);
-    } else {
-      setDisplayedAgentText('');
-    }
-  }, [agentMessages]);
+    return withRoles.sort((a, b) => {
+      const ta = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
+      const tb = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
+      return ta - tb;
+    });
+  }, [userMessages, agentMessages]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -38,64 +41,136 @@ export function ConversationView({ userMessages, agentMessages, liveUserLine, is
         </Box>
       )}
 
-      {/* User Messages */}
-      {userMessages.map((message, index) => (
-        <Fade in={true} key={message.id} timeout={300}>
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: 2,
-              animation: 'slideInRight 0.3s ease',
-              '@keyframes slideInRight': {
-                from: {
-                  opacity: 0,
-                  transform: 'translateX(20px)',
-                },
-                to: {
-                  opacity: 1,
-                  transform: 'translateX(0)',
-                },
-              },
-            }}
-          >
-            <Box
-              sx={{
-                maxWidth: '70%',
-                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                borderRadius: 3,
-                borderTopRightRadius: 4,
-                p: 2,
-                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-              }}
-            >
-              <Typography variant="body1" sx={{ color: 'white', wordBreak: 'break-word' }}>
-                {message.text}
-              </Typography>
-              <Typography
-                variant="caption"
+      {/* Merged Conversation (chat-like UI) */}
+      {conversation.map((message) => {
+        const isUser = message.role === 'user';
+        const time =
+          message.timestamp instanceof Date
+            ? message.timestamp.toLocaleTimeString()
+            : new Date(message.timestamp).toLocaleTimeString();
+
+        if (isUser) {
+          return (
+            <Fade in={true} key={message.id} timeout={300}>
+              <Box
                 sx={{
-                  display: 'block',
-                  mt: 1,
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  fontSize: '0.75rem',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 2,
+                  animation: 'slideInRight 0.3s ease',
+                  '@keyframes slideInRight': {
+                    from: {
+                      opacity: 0,
+                      transform: 'translateX(20px)',
+                    },
+                    to: {
+                      opacity: 1,
+                      transform: 'translateX(0)',
+                    },
+                  },
                 }}
               >
-                {message.timestamp.toLocaleTimeString()}
-              </Typography>
-            </Box>
-            <Avatar
+                <Box
+                  sx={{
+                    maxWidth: '70%',
+                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                    borderRadius: 3,
+                    borderTopRightRadius: 4,
+                    p: 2,
+                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                  }}
+                >
+                  <Typography variant="body1" sx={{ color: 'white', wordBreak: 'break-word' }}>
+                    {message.text}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: 'block',
+                      mt: 1,
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    {time}
+                  </Typography>
+                </Box>
+                <Avatar
+                  sx={{
+                    bgcolor: 'primary.main',
+                    width: 36,
+                    height: 36,
+                  }}
+                >
+                  <Person sx={{ fontSize: 20 }} />
+                </Avatar>
+              </Box>
+            </Fade>
+          );
+        }
+
+        return (
+          <Fade in={true} key={message.id} timeout={300}>
+            <Box
               sx={{
-                bgcolor: 'primary.main',
-                width: 36,
-                height: 36,
+                display: 'flex',
+                justifyContent: 'flex-start',
+                gap: 2,
+                animation: 'slideInLeft 0.3s ease',
+                '@keyframes slideInLeft': {
+                  from: {
+                    opacity: 0,
+                    transform: 'translateX(-20px)',
+                  },
+                  to: {
+                    opacity: 1,
+                    transform: 'translateX(0)',
+                  },
+                },
               }}
             >
-              <Person sx={{ fontSize: 20 }} />
-            </Avatar>
-          </Box>
-        </Fade>
-      ))}
+              <Avatar
+                sx={{
+                  bgcolor: 'secondary.main',
+                  width: 36,
+                  height: 36,
+                }}
+              >
+                <SmartToy sx={{ fontSize: 20 }} />
+              </Avatar>
+              <Box
+                sx={{
+                  maxWidth: '70%',
+                  background: 'rgba(15, 23, 42, 0.8)',
+                  border: '1px solid rgba(148, 163, 184, 0.2)',
+                  borderRadius: 3,
+                  borderTopLeftRadius: 4,
+                  p: 2,
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+                }}
+              >
+                <Typography
+                  variant="body1"
+                  sx={{ color: 'text.primary', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
+                >
+                  {message.text}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: 'block',
+                    mt: 1,
+                    color: 'text.secondary',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {time}
+                </Typography>
+              </Box>
+            </Box>
+          </Fade>
+        );
+      })}
 
       {/* Live User Line (interim transcript) */}
       {liveUserLine && (
@@ -145,68 +220,6 @@ export function ConversationView({ userMessages, agentMessages, liveUserLine, is
             <Person sx={{ fontSize: 20 }} />
           </Avatar>
         </Box>
-      )}
-
-      {/* Agent Messages */}
-      {displayedAgentText && (
-        <Fade in={true} timeout={300}>
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'flex-start',
-              gap: 2,
-              animation: 'slideInLeft 0.3s ease',
-              '@keyframes slideInLeft': {
-                from: {
-                  opacity: 0,
-                  transform: 'translateX(-20px)',
-                },
-                to: {
-                  opacity: 1,
-                  transform: 'translateX(0)',
-                },
-              },
-            }}
-          >
-            <Avatar
-              sx={{
-                bgcolor: 'secondary.main',
-                width: 36,
-                height: 36,
-              }}
-            >
-              <SmartToy sx={{ fontSize: 20 }} />
-            </Avatar>
-            <Box
-              sx={{
-                maxWidth: '70%',
-                background: 'rgba(15, 23, 42, 0.8)',
-                border: '1px solid rgba(148, 163, 184, 0.2)',
-                borderRadius: 3,
-                borderTopLeftRadius: 4,
-                p: 2,
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
-              }}
-            >
-              <Typography variant="body1" sx={{ color: 'text.primary', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                {displayedAgentText}
-              </Typography>
-              {agentMessages.length > 0 && agentMessages[0].timestamp && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    display: 'block',
-                    mt: 1,
-                    color: 'text.secondary',
-                    fontSize: '0.75rem',
-                  }}
-                >
-                  {agentMessages[0].timestamp.toLocaleTimeString()}
-                </Typography>
-              )}
-            </Box>
-          </Box>
-        </Fade>
       )}
 
       {/* Thinking Indicator */}

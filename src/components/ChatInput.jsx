@@ -1,14 +1,35 @@
 import { Box, TextField, IconButton } from '@mui/material';
 import { Send } from '@mui/icons-material';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-export function ChatInput({ onSend, disabled, isThinking }) {
+export function ChatInput({ onSend, disabled, isThinking, autoFocus }) {
   const [inputValue, setInputValue] = useState('');
+  const inputRef = useRef(null);
+
+  const focusInput = () => {
+    if (inputRef.current) {
+      // Focus the underlying input/textarea element
+      const node = inputRef.current.querySelector('textarea, input');
+      if (node) {
+        node.focus();
+      } else if (typeof inputRef.current.focus === 'function') {
+        inputRef.current.focus();
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (autoFocus && !disabled && !isThinking) {
+      focusInput();
+    }
+  }, [autoFocus, disabled, isThinking]);
 
   const handleSend = () => {
     if (inputValue.trim() && !disabled && !isThinking) {
       onSend(inputValue.trim());
       setInputValue('');
+      // Keep focus in the input for fast consecutive messages
+      focusInput();
     }
   };
 
@@ -30,6 +51,7 @@ export function ChatInput({ onSend, disabled, isThinking }) {
       }}
     >
       <TextField
+        inputRef={inputRef}
         fullWidth
         multiline
         maxRows={4}
