@@ -57,6 +57,9 @@ export function StatusIndicator({ state }) {
         bgcolor: 'rgba(15, 23, 42, 0.6)',
         border: `1px solid ${config.color}40`,
         color: 'text.primary',
+        height: 40,
+        borderRadius: 20,
+        px: 1.5,
         '& .MuiChip-icon': {
           marginLeft: 1,
         },
