@@ -85,6 +85,18 @@ export function sendStopRecording() {
   socket.send(JSON.stringify(message));
 }
 
+export function sendChatMessage(text) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  if (!text || !text.trim()) return;
+  const message = {
+    type: 'chat_message',
+    payload: {
+      text: text.trim(),
+    },
+  };
+  socket.send(JSON.stringify(message));
+}
+
 export function subscribe(cb) {
   listeners.push(cb);
   return () => {

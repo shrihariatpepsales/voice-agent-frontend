@@ -5,10 +5,12 @@ import './styles.css';
 import { useMicrophone } from './audio/useMicrophone';
 import { playAudioChunk } from './audio/audioPlayer';
 import { speakText, stopTTS } from './audio/openaiTTS';
-import { connectWebSocket, sendAudioChunk, sendInterrupt, sendStartRecording, sendStopRecording, subscribe } from './websocket/socket';
+import { connectWebSocket, sendAudioChunk, sendInterrupt, sendStartRecording, sendStopRecording, sendChatMessage, subscribe } from './websocket/socket';
 import { ConversationView } from './components/ConversationView';
 import { StatusIndicator } from './components/StatusIndicator';
 import { MicrophoneButton } from './components/MicrophoneButton';
+import { ModeToggle } from './components/ModeToggle';
+import { ChatInput } from './components/ChatInput';
 
 const theme = createTheme({
   palette: {
@@ -52,6 +54,7 @@ const theme = createTheme({
 });
 
 function App() {
+  const [mode, setMode] = useState('voice'); // 'voice' | 'chat'
   const [isRecording, setIsRecording] = useState(false);
   const [connectionState, setConnectionState] = useState('disconnected');
   const [userMessages, setUserMessages] = useState([]);
@@ -156,9 +159,10 @@ function App() {
     };
   }, []);
 
-  // Trigger TTS when agent response is complete
+  // Trigger TTS when agent response is complete (only in voice mode)
   useEffect(() => {
     if (
+      mode === 'voice' &&
       connectionState === 'idle' &&
       agentMessages.length > 0 &&
       agentMessages[0].text &&
@@ -181,7 +185,7 @@ function App() {
           setConnectionState('idle');
         });
     }
-  }, [agentMessages, connectionState]);
+  }, [agentMessages, connectionState, mode]);
 
   const toggleRecording = () => {
     if (!isRecording) {
@@ -196,6 +200,38 @@ function App() {
       sendStopRecording();
       setIsRecording(false);
     }
+  };
+
+  const handleChatSend = (text) => {
+    if (text && text.trim()) {
+      // Add user message to UI immediately
+      setUserMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          text: text.trim(),
+          timestamp: new Date(),
+        },
+      ]);
+      // Clear agent messages when new user message is sent
+      setAgentMessages([]);
+      // Send to backend
+      sendChatMessage(text);
+    }
+  };
+
+  const handleModeChange = (newMode) => {
+    // Stop any ongoing recording or TTS when switching modes
+    if (isRecording) {
+      sendStopRecording();
+      setIsRecording(false);
+    }
+    if (isSpeakingRef.current) {
+      stopTTS();
+      isSpeakingRef.current = false;
+      sendInterrupt();
+    }
+    setMode(newMode);
   };
 
   const isListening = connectionState === 'listening' || connectionState === 'recording';
@@ -250,7 +286,14 @@ function App() {
                 AI-powered hospital receptionist
               </Typography>
             </Box>
-            <StatusIndicator state={connectionState} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <ModeToggle
+                mode={mode}
+                onChange={handleModeChange}
+                disabled={connectionState === 'disconnected' || connectionState === 'error'}
+              />
+              <StatusIndicator state={connectionState} />
+            </Box>
           </Box>
 
           {/* Conversation Area */}
@@ -261,35 +304,51 @@ function App() {
               backdropFilter: 'blur(20px)',
               border: '1px solid rgba(148, 163, 184, 0.1)',
               borderRadius: 3,
-              p: 3,
               mb: 3,
               minHeight: '500px',
               maxHeight: 'calc(100vh - 400px)',
-              overflowY: 'auto',
-              '&::-webkit-scrollbar': {
-                width: '8px',
-              },
-              '&::-webkit-scrollbar-track': {
-                background: 'rgba(15, 23, 42, 0.5)',
-                borderRadius: '4px',
-              },
-              '&::-webkit-scrollbar-thumb': {
-                background: 'rgba(99, 102, 241, 0.5)',
-                borderRadius: '4px',
-                '&:hover': {
-                  background: 'rgba(99, 102, 241, 0.7)',
-                },
-              },
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
             }}
           >
-            <ConversationView
-              userMessages={userMessages}
-              agentMessages={agentMessages}
-              liveUserLine={liveUserLine}
-              isThinking={isThinking}
-              isListening={isListening}
-            />
-            <div ref={conversationEndRef} />
+            <Box
+              sx={{
+                flex: 1,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                p: 3,
+                '&::-webkit-scrollbar': {
+                  width: '8px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  background: 'transparent',
+                  margin: '8px 0',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  background: 'rgba(99, 102, 241, 0.4)',
+                  borderRadius: '4px',
+                  border: '2px solid transparent',
+                  backgroundClip: 'padding-box',
+                  '&:hover': {
+                    background: 'rgba(99, 102, 241, 0.6)',
+                    backgroundClip: 'padding-box',
+                  },
+                },
+                // Firefox scrollbar styling
+                scrollbarWidth: 'thin',
+                scrollbarColor: 'rgba(99, 102, 241, 0.4) transparent',
+              }}
+            >
+              <ConversationView
+                userMessages={userMessages}
+                agentMessages={agentMessages}
+                liveUserLine={liveUserLine}
+                isThinking={isThinking}
+                isListening={isListening}
+              />
+              <div ref={conversationEndRef} />
+            </Box>
           </Paper>
 
           {/* Control Area */}
@@ -301,12 +360,20 @@ function App() {
               gap: 2,
             }}
           >
-            <MicrophoneButton
-              isRecording={isRecording}
-              isSpeaking={isSpeaking}
-              onClick={toggleRecording}
-              disabled={connectionState === 'disconnected' || connectionState === 'error'}
-            />
+            {mode === 'voice' ? (
+              <MicrophoneButton
+                isRecording={isRecording}
+                isSpeaking={isSpeaking}
+                onClick={toggleRecording}
+                disabled={connectionState === 'disconnected' || connectionState === 'error'}
+              />
+            ) : (
+              <ChatInput
+                onSend={handleChatSend}
+                disabled={connectionState === 'disconnected' || connectionState === 'error'}
+                isThinking={isThinking}
+              />
+            )}
           </Box>
 
           {micError && (
@@ -320,7 +387,15 @@ function App() {
           {/* Status Text */}
           <Box sx={{ mt: 2, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              {isRecording
+              {mode === 'chat'
+                ? isThinking
+                  ? 'Agent is thinking...'
+                  : connectionState === 'connected'
+                  ? 'Type your message below'
+                  : connectionState === 'disconnected'
+                  ? 'Connecting...'
+                  : 'Ready to chat'
+                : isRecording
                 ? 'Listening... Speak clearly'
                 : isSpeaking
                 ? 'Agent is speaking...'
