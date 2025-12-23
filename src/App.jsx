@@ -1,19 +1,67 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
+import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { Box, Container, Typography, Paper, Fade } from '@mui/material';
 import './styles.css';
 import { useMicrophone } from './audio/useMicrophone';
 import { playAudioChunk } from './audio/audioPlayer';
 import { speakText, stopTTS } from './audio/openaiTTS';
 import { connectWebSocket, sendAudioChunk, sendInterrupt, sendStartRecording, sendStopRecording, subscribe } from './websocket/socket';
+import { ConversationView } from './components/ConversationView';
+import { AudioVisualizer } from './components/AudioVisualizer';
+import { StatusIndicator } from './components/StatusIndicator';
+import { MicrophoneButton } from './components/MicrophoneButton';
+
+const theme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: {
+      main: '#6366f1',
+      light: '#818cf8',
+      dark: '#4f46e5',
+    },
+    secondary: {
+      main: '#10b981',
+      light: '#34d399',
+      dark: '#059669',
+    },
+    error: {
+      main: '#ef4444',
+    },
+    background: {
+      default: '#0f172a',
+      paper: 'rgba(15, 23, 42, 0.8)',
+    },
+    text: {
+      primary: '#f1f5f9',
+      secondary: '#94a3b8',
+    },
+  },
+  typography: {
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h1: {
+      fontWeight: 700,
+      fontSize: '2rem',
+    },
+    body1: {
+      fontSize: '1rem',
+      lineHeight: 1.6,
+    },
+  },
+  shape: {
+    borderRadius: 16,
+  },
+});
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [connectionState, setConnectionState] = useState('disconnected');
-  const [userTranscript, setUserTranscript] = useState('');
-  const [agentText, setAgentText] = useState('');
+  const [userMessages, setUserMessages] = useState([]);
+  const [agentMessages, setAgentMessages] = useState([]);
   const [liveUserLine, setLiveUserLine] = useState('');
-  const [eventLog, setEventLog] = useState([]);
-  const previousAgentTextRef = useRef(''); // Track previous agent text to detect completion
-  const isSpeakingRef = useRef(false); // Track if TTS is currently playing
+  const [micError, setMicError] = useState(null);
+  const previousAgentTextRef = useRef('');
+  const isSpeakingRef = useRef(false);
+  const conversationEndRef = useRef(null);
 
   const handleAudioFrame = useCallback(
     (pcm16) => {
@@ -23,47 +71,69 @@ function App() {
     [isRecording]
   );
 
-  const { micError } = useMicrophone({
+  const { micError: micErrorFromHook } = useMicrophone({
     enabled: isRecording,
     onAudioFrame: handleAudioFrame,
   });
 
   useEffect(() => {
+    setMicError(micErrorFromHook);
+  }, [micErrorFromHook]);
+
+  useEffect(() => {
+    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [userMessages, agentMessages, liveUserLine]);
+
+  useEffect(() => {
     connectWebSocket();
     const unsubscribe = subscribe((message) => {
       const { type, payload } = message;
-      setEventLog((prev) => {
-        const next = [...prev, `${new Date().toLocaleTimeString()} ${type} ${JSON.stringify(payload)}`];
-        return next.slice(-50);
-      });
       switch (type) {
         case 'transcript':
           if (payload.isFinal) {
-            // Final transcript after 5 seconds of silence - add to history
-            setUserTranscript((prev) => `${prev}\n${payload.text}`);
+            // Final transcript - add as a new user message
+            if (payload.text && payload.text.trim()) {
+              setUserMessages((prev) => [
+                ...prev,
+                {
+                  id: Date.now(),
+                  text: payload.text.trim(),
+                  timestamp: new Date(),
+                },
+              ]);
+            }
             setLiveUserLine('');
-            // Clear agent text when new user message is finalized (new conversation turn)
-            setAgentText('');
+            setAgentMessages([]); // Clear agent messages when new user message arrives
           } else {
-            // Interim transcript - show in real-time as it builds up
-            // This shows the full accumulated transcript as user speaks
+            // Interim transcript - show as live typing
             setLiveUserLine(payload.text || '');
           }
           break;
         case 'agent_text':
-          // Handle agent text updates
           if (payload.clear) {
-            // Clear agent text when new response starts
-            setAgentText('');
+            setAgentMessages([]);
             previousAgentTextRef.current = '';
-            // Stop any ongoing TTS
             stopTTS();
             isSpeakingRef.current = false;
           } else if (payload.token) {
-            // Accumulate streaming tokens from LLM
-            setAgentText((prev) => {
-              const newText = prev + payload.token;
-              return newText;
+            setAgentMessages((prev) => {
+              if (prev.length === 0) {
+                return [
+                  {
+                    id: Date.now(),
+                    text: payload.token,
+                    timestamp: new Date(),
+                  },
+                ];
+              }
+              const lastMessage = prev[prev.length - 1];
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...lastMessage,
+                  text: lastMessage.text + payload.token,
+                },
+              ];
             });
           }
           break;
@@ -87,45 +157,36 @@ function App() {
     };
   }, []);
 
-  // Effect to trigger TTS when agent response is complete
-  // Trigger TTS when status becomes 'idle' (LLM response is complete)
+  // Trigger TTS when agent response is complete
   useEffect(() => {
-    // Trigger TTS when:
-    // 1. Status is 'idle' (LLM response complete)
-    // 2. Agent text exists and is not empty
-    // 3. Agent text hasn't been spoken yet (different from previous)
-    // 4. Not currently speaking
-    if (connectionState === 'idle' &&
-        agentText && 
-        agentText.trim().length > 0 && 
-        agentText !== previousAgentTextRef.current &&
-        !isSpeakingRef.current) {
-      // Agent response is complete - speak it
-      const textToSpeak = agentText.trim();
+    if (
+      connectionState === 'idle' &&
+      agentMessages.length > 0 &&
+      agentMessages[0].text &&
+      agentMessages[0].text.trim().length > 0 &&
+      agentMessages[0].text !== previousAgentTextRef.current &&
+      !isSpeakingRef.current
+    ) {
+      const textToSpeak = agentMessages[0].text.trim();
       previousAgentTextRef.current = textToSpeak;
       isSpeakingRef.current = true;
-      
-      console.log('[TTS] Speaking agent response:', textToSpeak.substring(0, 50) + '...');
-      
+      setConnectionState('speaking');
+
       speakText(textToSpeak, {
-        voice: 'nova', // Options: alloy, echo, fable, onyx, nova, shimmer
-        model: 'tts-1', // Use 'tts-1-hd' for higher quality (slower)
-        speed: 1.0, // Normal speed (0.25 to 4.0)
-      }).finally(() => {
-        isSpeakingRef.current = false;
-        console.log('[TTS] Finished speaking');
-      });
+        voice: 'nova',
+        model: 'tts-1',
+        speed: 1.0,
+      })
+        .finally(() => {
+          isSpeakingRef.current = false;
+          setConnectionState('idle');
+        });
     }
-  }, [agentText, connectionState]);
+  }, [agentMessages, connectionState]);
 
   const toggleRecording = () => {
     if (!isRecording) {
-      // Starting recording
-      // Only send an interrupt if the agent is currently responding
-      // (thinking or speaking). This avoids marking the very first
-      // interaction as "interrupted".
       if (connectionState === 'thinking' || connectionState === 'speaking' || isSpeakingRef.current) {
-        // Stop any ongoing TTS playback
         stopTTS();
         isSpeakingRef.current = false;
         sendInterrupt();
@@ -133,56 +194,158 @@ function App() {
       sendStartRecording();
       setIsRecording(true);
     } else {
-      // Stopping recording
       sendStopRecording();
       setIsRecording(false);
     }
   };
 
+  const isListening = connectionState === 'listening' || connectionState === 'recording';
+  const isThinking = connectionState === 'thinking';
+  const isSpeaking = connectionState === 'speaking' || isSpeakingRef.current;
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Realtime Voice Agent</h1>
-        <div className="status">
-          <span className={`dot dot-${connectionState}`} />
-          <span className="status-text">{connectionState}</span>
-        </div>
-      </header>
-
-      <main className="app-main">
-        <div className="controls">
-          <button
-            type="button"
-            className={isRecording ? 'btn btn-stop' : 'btn btn-start'}
-            onClick={toggleRecording}
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Box
+        sx={{
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)',
+          position: 'relative',
+          overflow: 'hidden',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.1) 0%, transparent 50%)',
+            pointerEvents: 'none',
+          },
+        }}
+      >
+        <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1, py: 4 }}>
+          {/* Header */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 4,
+            }}
           >
-            {isRecording ? 'Stop Talking' : 'Start Talking'}
-          </button>
-          {micError && <p className="error">Mic error: {micError}</p>}
-        </div>
+            <Box>
+              <Typography
+                variant="h1"
+                sx={{
+                  background: 'linear-gradient(135deg, #6366f1 0%, #10b981 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                  mb: 0.5,
+                }}
+              >
+                Voice Agent
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                AI-powered hospital receptionist
+              </Typography>
+            </Box>
+            <StatusIndicator state={connectionState} />
+          </Box>
 
-        <div className="panels">
-          <section className="panel">
-            <h2>Your transcript</h2>
-            <pre className="text-block">
-              {userTranscript ? `${userTranscript}\n${liveUserLine}` : (liveUserLine || (connectionState === 'listening' || connectionState === 'recording' ? 'Listening...' : 'Speak into the microphone...'))}
-            </pre>
-          </section>
-          <section className="panel">
-            <h2>Agent</h2>
-            <pre className="text-block">{agentText || 'Agent responses will appear here.'}</pre>
-          </section>
-          <section className="panel">
-            <h2>Events</h2>
-            <pre className="text-block">
-              {eventLog.length
-                ? eventLog.join('\n')
-                : 'WebSocket and transcription events will appear here.'}
-            </pre>
-          </section>
-        </div>
-      </main>
-    </div>
+          {/* Conversation Area */}
+          <Paper
+            elevation={0}
+            sx={{
+              background: 'rgba(15, 23, 42, 0.6)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(148, 163, 184, 0.1)',
+              borderRadius: 3,
+              p: 3,
+              mb: 3,
+              minHeight: '500px',
+              maxHeight: 'calc(100vh - 400px)',
+              overflowY: 'auto',
+              '&::-webkit-scrollbar': {
+                width: '8px',
+              },
+              '&::-webkit-scrollbar-track': {
+                background: 'rgba(15, 23, 42, 0.5)',
+                borderRadius: '4px',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: 'rgba(99, 102, 241, 0.5)',
+                borderRadius: '4px',
+                '&:hover': {
+                  background: 'rgba(99, 102, 241, 0.7)',
+                },
+              },
+            }}
+          >
+            <ConversationView
+              userMessages={userMessages}
+              agentMessages={agentMessages}
+              liveUserLine={liveUserLine}
+              isThinking={isThinking}
+              isListening={isListening}
+            />
+            <div ref={conversationEndRef} />
+          </Paper>
+
+          {/* Audio Visualizer */}
+          {(isListening || isSpeaking) && (
+            <Fade in={isListening || isSpeaking}>
+              <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
+                <AudioVisualizer isActive={isListening || isSpeaking} type={isListening ? 'listening' : 'speaking'} />
+              </Box>
+            </Fade>
+          )}
+
+          {/* Control Area */}
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <MicrophoneButton
+              isRecording={isRecording}
+              isSpeaking={isSpeaking}
+              onClick={toggleRecording}
+              disabled={connectionState === 'disconnected' || connectionState === 'error'}
+            />
+          </Box>
+
+          {micError && (
+            <Box sx={{ mt: 2, textAlign: 'center' }}>
+              <Typography variant="body2" color="error">
+                Microphone Error: {micError}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Status Text */}
+          <Box sx={{ mt: 2, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              {isRecording
+                ? 'Listening... Speak clearly'
+                : isSpeaking
+                ? 'Agent is speaking...'
+                : isThinking
+                ? 'Agent is thinking...'
+                : connectionState === 'connected'
+                ? 'Ready to talk'
+                : connectionState === 'disconnected'
+                ? 'Connecting...'
+                : 'Click the microphone to start'}
+            </Typography>
+          </Box>
+        </Container>
+      </Box>
+    </ThemeProvider>
   );
 }
 

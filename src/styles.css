@@ -1,178 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: radial-gradient(circle at top left, #101827, #020617);
-  color: #e5e7eb;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
-.app {
+#root {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 24px 16px 40px;
 }
 
-.app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  letter-spacing: 0.04em;
-}
-
-.status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.875rem;
-  color: #9ca3af;
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background-color: #4b5563;
-}
-
-.dot-connected {
-  background-color: #22c55e;
-}
-
-.dot-thinking {
-  background-color: #eab308;
-}
-
-.dot-idle {
-  background-color: #4b5563;
-}
-
-.dot-recording {
-  background-color: #3b82f6;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.dot-speaking {
-  background-color: #8b5cf6;
-}
-
-.dot-interrupted {
-  background-color: #f97316;
-}
-
-.dot-error {
-  background-color: #ef4444;
-}
-
-.dot-disconnected {
-  background-color: #6b7280;
-}
-
-.app-main {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.controls {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.btn {
-  border: none;
-  border-radius: 999px;
-  padding: 10px 20px;
-  font-size: 0.95rem;
-  cursor: pointer;
-  color: #f9fafb;
-  transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.1s ease;
-}
-
-.btn-start {
-  background: linear-gradient(135deg, #22c55e, #16a34a);
-  box-shadow: 0 10px 20px rgba(34, 197, 94, 0.25);
-}
-
-.btn-stop {
-  background: linear-gradient(135deg, #ef4444, #b91c1c);
-  box-shadow: 0 10px 20px rgba(239, 68, 68, 0.3);
-}
-
-.btn:hover {
-  transform: translateY(-1px);
-}
-
-.btn:active {
-  transform: translateY(0);
-  box-shadow: none;
-}
-
-.error {
-  color: #fecaca;
-  font-size: 0.85rem;
-}
-
-.panels {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
-  margin-top: 12px;
-}
-
-.panel {
-  background: rgba(15, 23, 42, 0.85);
-  border-radius: 16px;
-  padding: 16px 14px 14px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.7);
-}
-
-.panel h2 {
-  margin: 0 0 10px;
-  font-size: 0.95rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #9ca3af;
-}
-
-.text-block {
-  margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 0.9rem;
-  color: #e5e7eb;
-  max-height: 260px;
-  overflow: auto;
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
-@media (max-width: 640px) {
-  .app {
-    padding-inline: 12px;
-  }
-}
-
-
+/* Custom scrollbar styles are handled in App.jsx via Material-UI sx prop */
