@@ -75,6 +75,26 @@ export function getConversationSessionId() {
 }
 
 /**
+ * Get user's current timezone (e.g., 'America/New_York', 'Asia/Kolkata')
+ * Falls back to IANA timezone name or offset-based timezone
+ */
+function getUserTimezone() {
+  if (typeof window === 'undefined' || typeof Intl === 'undefined') {
+    return 'UTC';
+  }
+
+  try {
+    // Get IANA timezone name (e.g., 'America/New_York', 'Asia/Kolkata')
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch (error) {
+    // Fallback: calculate timezone offset
+    const offset = -new Date().getTimezoneOffset() / 60;
+    const sign = offset >= 0 ? '+' : '-';
+    return `UTC${sign}${Math.abs(offset).toString().padStart(2, '0')}:00`;
+  }
+}
+
+/**
  * Compute metadata to attach to every outbound request (HTTP/WebSocket).
  */
 export function getSessionMetadata() {
@@ -90,6 +110,7 @@ export function getSessionMetadata() {
     conversation_session_id: conversationSessionId,
     user_id: userId,
     user_type: userType,
+    timezone: getUserTimezone(), // Add user's timezone to metadata
   };
 }
 
