@@ -1,4 +1,12 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+  addUserMessage,
+  markNewAgentMessage,
+  appendAgentToken,
+  setLiveUserLine,
+  loadChatHistory,
+} from './store/chatSlice';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { Box, Container, Typography, Paper } from '@mui/material';
 import './styles.css';
@@ -57,9 +65,10 @@ function App() {
   const [mode, setMode] = useState('voice'); // 'voice' | 'chat'
   const [isRecording, setIsRecording] = useState(false);
   const [connectionState, setConnectionState] = useState('disconnected');
-  const [userMessages, setUserMessages] = useState([]);
-  const [agentMessages, setAgentMessages] = useState([]);
-  const [liveUserLine, setLiveUserLine] = useState('');
+  const dispatch = useDispatch();
+  const userMessages = useSelector((state) => state.chat.userMessages);
+  const agentMessages = useSelector((state) => state.chat.agentMessages);
+  const liveUserLine = useSelector((state) => state.chat.liveUserLine);
   const [micError, setMicError] = useState(null);
   const previousAgentTextRef = useRef('');
   const isSpeakingRef = useRef(false);
@@ -88,55 +97,34 @@ function App() {
 
   useEffect(() => {
     connectWebSocket();
+    dispatch(loadChatHistory());
     const unsubscribe = subscribe((message) => {
       const { type, payload } = message;
       switch (type) {
         case 'transcript':
           if (payload.isFinal) {
-            // Final transcript - add as a new user message
             if (payload.text && payload.text.trim()) {
-              setUserMessages((prev) => [
-                ...prev,
-                {
+              dispatch(
+                addUserMessage({
                   id: Date.now(),
                   text: payload.text.trim(),
-                  timestamp: new Date(),
-                },
-              ]);
+                  timestamp: new Date().toISOString(),
+                })
+              );
             }
-            setLiveUserLine('');
-            setAgentMessages([]); // Clear agent messages when new user message arrives
+            dispatch(setLiveUserLine(''));
           } else {
-            // Interim transcript - show as live typing
-            setLiveUserLine(payload.text || '');
+            dispatch(setLiveUserLine(payload.text || ''));
           }
           break;
         case 'agent_text':
           if (payload.clear) {
-            setAgentMessages([]);
+            dispatch(markNewAgentMessage());
             previousAgentTextRef.current = '';
             stopTTS();
             isSpeakingRef.current = false;
           } else if (payload.token) {
-            setAgentMessages((prev) => {
-              if (prev.length === 0) {
-                return [
-                  {
-                    id: Date.now(),
-                    text: payload.token,
-                    timestamp: new Date(),
-                  },
-                ];
-              }
-              const lastMessage = prev[prev.length - 1];
-              return [
-                ...prev.slice(0, -1),
-                {
-                  ...lastMessage,
-                  text: lastMessage.text + payload.token,
-                },
-              ];
-            });
+            dispatch(appendAgentToken(payload.token));
           }
           break;
         case 'status':
@@ -205,16 +193,13 @@ function App() {
   const handleChatSend = (text) => {
     if (text && text.trim()) {
       // Add user message to UI immediately
-      setUserMessages((prev) => [
-        ...prev,
-        {
+      dispatch(
+        addUserMessage({
           id: Date.now(),
           text: text.trim(),
-          timestamp: new Date(),
-        },
-      ]);
-      // Clear agent messages when new user message is sent
-      setAgentMessages([]);
+          timestamp: new Date().toISOString(),
+        })
+      );
       // Send to backend
       sendChatMessage(text);
     }
@@ -372,6 +357,7 @@ function App() {
                 onSend={handleChatSend}
                 disabled={connectionState === 'disconnected' || connectionState === 'error'}
                 isThinking={isThinking}
+                autoFocus={mode === 'chat'}
               />
             )}
           </Box>
