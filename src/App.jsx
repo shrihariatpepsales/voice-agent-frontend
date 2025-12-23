@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-import { Box, Container, Typography, Paper, Fade } from '@mui/material';
+import { Box, Container, Typography, Paper } from '@mui/material';
 import './styles.css';
 import { useMicrophone } from './audio/useMicrophone';
 import { playAudioChunk } from './audio/audioPlayer';
 import { speakText, stopTTS } from './audio/openaiTTS';
 import { connectWebSocket, sendAudioChunk, sendInterrupt, sendStartRecording, sendStopRecording, subscribe } from './websocket/socket';
 import { ConversationView } from './components/ConversationView';
-import { AudioVisualizer } from './components/AudioVisualizer';
 import { StatusIndicator } from './components/StatusIndicator';
 import { MicrophoneButton } from './components/MicrophoneButton';
 
@@ -292,15 +291,6 @@ function App() {
             />
             <div ref={conversationEndRef} />
           </Paper>
-
-          {/* Audio Visualizer */}
-          {(isListening || isSpeaking) && (
-            <Fade in={isListening || isSpeaking}>
-              <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
-                <AudioVisualizer isActive={isListening || isSpeaking} type={isListening ? 'listening' : 'speaking'} />
-              </Box>
-            </Fade>
-          )}
 
           {/* Control Area */}
           <Box
