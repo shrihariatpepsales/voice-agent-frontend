@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   addUserMessage,
@@ -21,6 +22,7 @@ import { MicrophoneButton } from './components/MicrophoneButton';
 import { ModeToggle } from './components/ModeToggle';
 import { ChatInput } from './components/ChatInput';
 import { AuthGate } from './components/AuthGate';
+import LoginPage from './components/LoginPage';
 import { resetBrowserSessionId } from './session';
 
 const theme = createTheme({
@@ -78,6 +80,8 @@ function App() {
   const previousAgentTextRef = useRef('');
   const isSpeakingRef = useRef(false);
   const conversationEndRef = useRef(null);
+  const scrollTimeoutRef = useRef(null);
+  const lastScrollTriggerRef = useRef({ userCount: 0, agentCount: 0, liveLine: '' });
 
   const handleAudioFrame = useCallback(
     (pcm16) => {
@@ -96,9 +100,75 @@ function App() {
     setMicError(micErrorFromHook);
   }, [micErrorFromHook]);
 
+  // Optimized scroll effect - only scrolls on significant changes
   useEffect(() => {
-    conversationEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [userMessages, agentMessages, liveUserLine]);
+    const userCount = userMessages.length;
+    const agentCount = agentMessages.length;
+    const currentLiveLine = liveUserLine || '';
+
+    const lastTrigger = lastScrollTriggerRef.current;
+    
+    // Only scroll if:
+    // 1. New user message added
+    // 2. New agent message added (not just token updates)
+    // 3. Live user line appears or disappears
+    const shouldScroll =
+      userCount !== lastTrigger.userCount ||
+      agentCount !== lastTrigger.agentCount ||
+      currentLiveLine !== lastTrigger.liveLine;
+
+    if (shouldScroll) {
+      // Clear any pending scroll
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+
+      // Debounce scroll for token updates, but scroll immediately for new messages
+      const isNewMessage = 
+        userCount !== lastTrigger.userCount || 
+        agentCount !== lastTrigger.agentCount;
+
+      if (isNewMessage) {
+        // Immediate scroll for new messages
+        requestAnimationFrame(() => {
+          conversationEndRef.current?.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'end',
+            inline: 'nearest'
+          });
+        });
+      } else {
+        // Debounced scroll for live line updates
+        scrollTimeoutRef.current = setTimeout(() => {
+          conversationEndRef.current?.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'end',
+            inline: 'nearest'
+          });
+        }, 100);
+      }
+
+      lastScrollTriggerRef.current = {
+        userCount,
+        agentCount,
+        liveLine: currentLiveLine,
+      };
+    }
+  }, [userMessages.length, agentMessages.length, liveUserLine]);
+
+  // Scroll when connection state changes (e.g., streaming completes)
+  useEffect(() => {
+    if (connectionState === 'idle' || connectionState === 'listening') {
+      // Small delay to ensure DOM has updated
+      setTimeout(() => {
+        conversationEndRef.current?.scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'end',
+          inline: 'nearest'
+        });
+      }, 100);
+    }
+  }, [connectionState]);
 
   useEffect(() => {
     connectWebSocket();
@@ -328,28 +398,30 @@ function App() {
     setShowAuthGate(true);
   };
 
-  if (authState === null) {
-    // Still hydrating auth state
-    return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-      </ThemeProvider>
-    );
-  }
+  // Main app content component (voice agent interface)
+  const MainApp = () => {
+    if (authState === null) {
+      // Still hydrating auth state
+      return (
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+        </ThemeProvider>
+      );
+    }
 
-  if (showAuthGate) {
-    // Show auth gate (login/signup/guest choice)
-    return (
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <AuthGate
-          onAuthenticated={handleAuthenticated}
-        />
-      </ThemeProvider>
-    );
-  }
+    if (showAuthGate) {
+      // Show auth gate (login/signup/guest choice)
+      return (
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <AuthGate
+            onAuthenticated={handleAuthenticated}
+          />
+        </ThemeProvider>
+      );
+    }
 
-  return (
+    return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Box
@@ -588,6 +660,18 @@ function App() {
           </Box>
         </Container>
       </Box>
+    </ThemeProvider>
+    );
+  };
+
+  // Router setup
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<MainApp />} />
+      </Routes>
     </ThemeProvider>
   );
 }
