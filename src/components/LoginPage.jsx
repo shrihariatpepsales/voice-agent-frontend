@@ -38,7 +38,7 @@ function LoginPage() {
   const handleGoogleLogin = () => {
     // Get the backend URL from environment or use default (matches backend server port)
     // In production, set VITE_API_URL environment variable
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     
     // Redirect to backend Google OAuth endpoint
     // This will redirect to Google's consent screen, then back to /auth/google/callback

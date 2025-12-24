@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
@@ -83,6 +83,9 @@ function App() {
   const scrollContainerRef = useRef(null);
   const scrollTimeoutRef = useRef(null);
   const lastScrollTriggerRef = useRef({ userCount: 0, agentCount: 0, liveLine: '' });
+  const shouldMaintainScrollRef = useRef(false);
+  const lastScrollHeightRef = useRef(0);
+  const previousScrollTopRef = useRef(0);
 
   const handleAudioFrame = useCallback(
     (pcm16) => {
@@ -103,28 +106,74 @@ function App() {
 
   /**
    * Scroll to bottom of conversation container
-   * Optimized for immediate, smooth scrolling
+   * Uses instant scroll first to prevent jumping to top, then smooth if requested
    */
   const scrollToBottom = useCallback((smooth = true) => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    // Use requestAnimationFrame to ensure DOM has updated with new content
-    // Double RAF ensures layout has been calculated
+    // Save current scroll state
+    previousScrollTopRef.current = container.scrollTop;
+    lastScrollHeightRef.current = container.scrollHeight;
+    
+    // Mark that we should maintain scroll position
+    shouldMaintainScrollRef.current = true;
+
+    // FIRST: Instantly jump to bottom to prevent React from resetting to top
+    // This happens synchronously before any re-renders can affect scroll
+    container.scrollTop = container.scrollHeight;
+
+    // THEN: Use requestAnimationFrame to ensure DOM has fully updated
+    // and apply smooth scroll if requested
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (smooth) {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        // Ensure we're still at bottom after DOM updates
+        const currentScrollHeight = container.scrollHeight;
+        if (smooth && Math.abs(container.scrollTop - currentScrollHeight) > 10) {
+          // Only use smooth scroll if we're not already at bottom
           container.scrollTo({
-            top: container.scrollHeight,
+            top: currentScrollHeight,
             behavior: 'smooth',
           });
         } else {
-          // Instant scroll (no animation)
-          container.scrollTop = container.scrollHeight;
+          // Ensure we're at bottom (instant)
+          container.scrollTop = currentScrollHeight;
         }
+        
+        // Reset the flag after a delay
+        setTimeout(() => {
+          shouldMaintainScrollRef.current = false;
+        }, 300);
       });
     });
   }, []);
+
+  // Preserve scroll position during re-renders to prevent jumps
+  // Use useLayoutEffect to run synchronously before paint, preventing visual jumps
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const currentScrollHeight = container.scrollHeight;
+    const currentScrollTop = container.scrollTop;
+    
+    // If we're expecting new content, always ensure we're at bottom
+    if (shouldMaintainScrollRef.current) {
+      // If scroll was reset to top (or near top) during re-render, jump directly to bottom
+      // This prevents the visible jump to top
+      if (currentScrollTop < 100 && currentScrollHeight > 0) {
+        // Instantly jump to bottom before paint to prevent visual jump
+        container.scrollTop = currentScrollHeight;
+      }
+    }
+    
+    // Always update refs to track scroll state
+    previousScrollTopRef.current = currentScrollTop;
+    lastScrollHeightRef.current = currentScrollHeight;
+  });
 
   // Immediate scroll effect - scrolls as soon as messages appear
   useEffect(() => {
@@ -146,9 +195,11 @@ function App() {
       }
 
       if (isNewUserMessage || isNewAgentMessage) {
-        // Immediate scroll for new messages - instant first, then smooth
-        // This ensures the scroll happens immediately without delay
-        scrollToBottom(true);
+        // Scroll immediately when new messages are added
+        // For agent messages, use instant scroll first to prevent jump to top
+        // For user messages, smooth scroll is fine
+        const useInstantFirst = isNewAgentMessage;
+        scrollToBottom(!useInstantFirst);
       } else if (liveLineChanged) {
         // For live line updates, use a very short debounce
         scrollTimeoutRef.current = setTimeout(() => {
@@ -202,14 +253,36 @@ function App() {
           break;
         case 'agent_text':
           if (payload.clear) {
+            // Set flag and scroll BEFORE dispatch to prevent React from resetting scroll
+            shouldMaintainScrollRef.current = true;
+            const container = scrollContainerRef.current;
+            if (container) {
+              // Save current state
+              previousScrollTopRef.current = container.scrollTop;
+              lastScrollHeightRef.current = container.scrollHeight;
+              // Immediately jump to bottom to prevent any jump to top
+              container.scrollTop = container.scrollHeight;
+            }
+            
+            // Now dispatch - React re-render will happen, but useLayoutEffect will maintain scroll
             dispatch(markNewAgentMessage());
             previousAgentTextRef.current = '';
             stopTTS();
             isSpeakingRef.current = false;
-            // Immediate scroll when new agent message starts - use microtask for immediate execution
-            Promise.resolve().then(() => scrollToBottom(true));
           } else if (payload.token) {
+            // Set flag before dispatch
+            shouldMaintainScrollRef.current = true;
+            
             dispatch(appendAgentToken(payload.token));
+            
+            // Scroll immediately when token arrives - this ensures we stay at bottom
+            // Use instant scroll to prevent any visible jumps
+            requestAnimationFrame(() => {
+              const container = scrollContainerRef.current;
+              if (container) {
+                container.scrollTop = container.scrollHeight;
+              }
+            });
           }
           break;
         case 'status':

@@ -29,8 +29,11 @@ export function connectWebSocket() {
     return socket;
   }
 
-  const url = 'ws://localhost:3001'; // Same host/port as backend HTTP
-  socket = new WebSocket(url);
+  // Use environment variable for WebSocket URL, default to port 8000
+  const wsUrl = import.meta.env.VITE_API_URL 
+    ? import.meta.env.VITE_API_URL.replace(/^http/, 'ws')
+    : 'ws://localhost:8000';
+  socket = new WebSocket(wsUrl);
 
   socket.onopen = () => {
     notifyAll({ type: 'status', payload: { state: 'connected' } });
