@@ -80,6 +80,7 @@ function App() {
   const previousAgentTextRef = useRef('');
   const isSpeakingRef = useRef(false);
   const conversationEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const scrollTimeoutRef = useRef(null);
   const lastScrollTriggerRef = useRef({ userCount: 0, agentCount: 0, liveLine: '' });
 
@@ -100,7 +101,32 @@ function App() {
     setMicError(micErrorFromHook);
   }, [micErrorFromHook]);
 
-  // Optimized scroll effect - only scrolls on significant changes
+  /**
+   * Scroll to bottom of conversation container
+   * Optimized for immediate, smooth scrolling
+   */
+  const scrollToBottom = useCallback((smooth = true) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Use requestAnimationFrame to ensure DOM has updated with new content
+    // Double RAF ensures layout has been calculated
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (smooth) {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth',
+          });
+        } else {
+          // Instant scroll (no animation)
+          container.scrollTop = container.scrollHeight;
+        }
+      });
+    });
+  }, []);
+
+  // Immediate scroll effect - scrolls as soon as messages appear
   useEffect(() => {
     const userCount = userMessages.length;
     const agentCount = agentMessages.length;
@@ -108,44 +134,26 @@ function App() {
 
     const lastTrigger = lastScrollTriggerRef.current;
     
-    // Only scroll if:
-    // 1. New user message added
-    // 2. New agent message added (not just token updates)
-    // 3. Live user line appears or disappears
-    const shouldScroll =
-      userCount !== lastTrigger.userCount ||
-      agentCount !== lastTrigger.agentCount ||
-      currentLiveLine !== lastTrigger.liveLine;
+    // Check for new messages
+    const isNewUserMessage = userCount !== lastTrigger.userCount;
+    const isNewAgentMessage = agentCount !== lastTrigger.agentCount;
+    const liveLineChanged = currentLiveLine !== lastTrigger.liveLine;
 
-    if (shouldScroll) {
+    if (isNewUserMessage || isNewAgentMessage || liveLineChanged) {
       // Clear any pending scroll
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
       }
 
-      // Debounce scroll for token updates, but scroll immediately for new messages
-      const isNewMessage = 
-        userCount !== lastTrigger.userCount || 
-        agentCount !== lastTrigger.agentCount;
-
-      if (isNewMessage) {
-        // Immediate scroll for new messages
-        requestAnimationFrame(() => {
-          conversationEndRef.current?.scrollIntoView({ 
-            behavior: 'smooth',
-            block: 'end',
-            inline: 'nearest'
-          });
-        });
-      } else {
-        // Debounced scroll for live line updates
+      if (isNewUserMessage || isNewAgentMessage) {
+        // Immediate scroll for new messages - instant first, then smooth
+        // This ensures the scroll happens immediately without delay
+        scrollToBottom(true);
+      } else if (liveLineChanged) {
+        // For live line updates, use a very short debounce
         scrollTimeoutRef.current = setTimeout(() => {
-          conversationEndRef.current?.scrollIntoView({ 
-            behavior: 'smooth',
-            block: 'end',
-            inline: 'nearest'
-          });
-        }, 100);
+          scrollToBottom(true);
+        }, 50);
       }
 
       lastScrollTriggerRef.current = {
@@ -154,21 +162,19 @@ function App() {
         liveLine: currentLiveLine,
       };
     }
-  }, [userMessages.length, agentMessages.length, liveUserLine]);
+  }, [userMessages.length, agentMessages.length, liveUserLine, scrollToBottom]);
 
   // Scroll when connection state changes (e.g., streaming completes)
   useEffect(() => {
     if (connectionState === 'idle' || connectionState === 'listening') {
-      // Small delay to ensure DOM has updated
-      setTimeout(() => {
-        conversationEndRef.current?.scrollIntoView({ 
-          behavior: 'smooth',
-          block: 'end',
-          inline: 'nearest'
-        });
-      }, 100);
+      // Small delay to ensure DOM has fully updated after streaming completes
+      const timeoutId = setTimeout(() => {
+        scrollToBottom(true);
+      }, 200);
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [connectionState]);
+  }, [connectionState, scrollToBottom]);
 
   useEffect(() => {
     connectWebSocket();
@@ -186,6 +192,8 @@ function App() {
                   timestamp: new Date().toISOString(),
                 })
               );
+              // Immediate scroll when user message is added - use microtask for immediate execution
+              Promise.resolve().then(() => scrollToBottom(true));
             }
             dispatch(setLiveUserLine(''));
           } else {
@@ -198,6 +206,8 @@ function App() {
             previousAgentTextRef.current = '';
             stopTTS();
             isSpeakingRef.current = false;
+            // Immediate scroll when new agent message starts - use microtask for immediate execution
+            Promise.resolve().then(() => scrollToBottom(true));
           } else if (payload.token) {
             dispatch(appendAgentToken(payload.token));
           }
@@ -281,6 +291,8 @@ function App() {
           timestamp: new Date().toISOString(),
         })
       );
+      // Immediate scroll when user sends a message - use microtask for immediate execution
+      Promise.resolve().then(() => scrollToBottom(true));
       // Send to backend
       sendChatMessage(text);
     }
@@ -562,6 +574,7 @@ function App() {
             }}
           >
             <Box
+              ref={scrollContainerRef}
               sx={{
                 flex: 1,
                 overflowY: 'auto',
